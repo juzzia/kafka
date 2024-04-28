@@ -475,6 +475,7 @@ public final class Utils {
     }
 
     /**
+     * mur mur 哈希算法，效率高，散列值较均匀，碰撞率低
      * Generates 32 bit murmur2 hash from byte array
      * @param data byte array to hash
      * @return 32 bit hash of the given array

@@ -324,19 +324,19 @@ public abstract class AbstractIndex implements Closeable {
         return mmap;
     }
 
-    /*
+    /**
      * Kafka mmaps index files into memory, and all the read / write operations of the index is through OS page cache. This
      * avoids blocked disk I/O in most cases.
-     *
+     * <p>
      * To the extent of our knowledge, all the modern operating systems use LRU policy or its variants to manage page
      * cache. Kafka always appends to the end of the index file, and almost all the index lookups (typically from in-sync
      * followers or consumers) are very close to the end of the index. So, the LRU cache replacement policy should work very
      * well with Kafka's index access pattern.
-     *
+     * <p>
      * However, when looking up index, the standard binary search algorithm is not cache friendly, and can cause unnecessary
      * page faults (the thread is blocked to wait for reading some index entries from hard disk, as those entries are not
      * cached in the page cache).
-     *
+     * <p>
      * For example, in an index with 13 pages, to lookup an entry in the last page (page #12), the standard binary search
      * algorithm will read index entries in page #0, 6, 9, 11, and 12.
      * page number: |0|1|2|3|4|5|6|7|8|9|10|11|12 |
@@ -353,17 +353,17 @@ public abstract class AbstractIndex implements Closeable {
      * the other pages. The 1st lookup, after the 1st index entry in page #13 is appended, is likely to have to read page #7
      * and page #10 from disk (page fault), which can take up to more than a second. In our test, this can cause the
      * at-least-once produce latency to jump to about 1 second from a few ms.
-     *
+     * <p>
      * Here, we use a more cache-friendly lookup algorithm:
      * if (target > indexEntry[end - N]) // if the target is in the last N entries of the index
      *    binarySearch(end - N, end)
      * else
      *    binarySearch(begin, end - N)
-     *
+     * <p>
      * If possible, we only look up in the last N entries of the index. By choosing a proper constant N, all the in-sync
      * lookups should go to the 1st branch. We call the last N entries the "warm" section. As we frequently look up in this
      * relatively small section, the pages containing this section are more likely to be in the page cache.
-     *
+     * <p>
      * We set N (_warmEntries) to 8192, because
      * 1. This number is small enough to guarantee all the pages of the "warm" section is touched in every warm-section
      *    lookup. So that, the entire warm section is really "warm".
@@ -373,10 +373,10 @@ public abstract class AbstractIndex implements Closeable {
      *    SPARC, Power, ARM etc.).
      * 2. This number is large enough to guarantee most of the in-sync lookups are in the warm-section. With default Kafka
      *    settings, 8KB index corresponds to about 4MB (offset index) or 2.7MB (time index) log messages.
-     *
+     * <p>
      *  We can't set make N (_warmEntries) to be larger than 8192, as there is no simple way to guarantee all the "warm"
      *  section pages are really warm (touched in every lookup) on a typical 4KB-page host.
-     *
+     * <p>
      * In there future, we may use a backend thread to periodically touch the entire warm section. So that, we can
      * 1) support larger warm section
      * 2) make sure the warm section of low QPS topic-partitions are really warm.
@@ -486,7 +486,7 @@ public abstract class AbstractIndex implements Closeable {
         // check if the index is empty
         if (entries == 0)
             return -1;
-
+        // 第一个热点项
         int firstHotEntry = Math.max(0, entries - 1 - warmEntries());
         // check if the target offset is in the warm section of the index
         if (compareIndexEntry(parseEntry(idx, firstHotEntry), target, searchEntity) < 0) {

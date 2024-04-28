@@ -23,7 +23,13 @@ public class PartitionInfo {
     private final String topic;
     private final int partition;
     private final Node leader;
+    /**
+     * AR
+     */
     private final Node[] replicas;
+    /**
+     * ISR
+     */
     private final Node[] inSyncReplicas;
     private final Node[] offlineReplicas;
 

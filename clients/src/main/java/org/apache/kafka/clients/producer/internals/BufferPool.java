@@ -47,6 +47,9 @@ public class BufferPool {
     static final String WAIT_TIME_SENSOR_NAME = "bufferpool-wait-time";
 
     private final long totalMemory;
+    /**
+     * batch.size
+     */
     private final int poolableSize;
     private final ReentrantLock lock;
     private final Deque<ByteBuffer> free;
@@ -98,6 +101,11 @@ public class BufferPool {
     }
 
     /**
+     *
+     * 主要就是做两件事
+     * 1. 判断需要的buffer的大小是否是等于batch.size,如果是并且空闲池队列不为空，那么返回队头的buffer
+     * 2. 判断可用的非池化内存大小是否满足需要的buffer的大小，如果不满足，那么就会等待指定时间获取非池化的buffer进行返回
+     *
      * Allocate a buffer of the given size. This method blocks if there is not enough memory and the buffer pool
      * is configured with blocking mode.
      *
@@ -135,6 +143,7 @@ public class BufferPool {
                 // we have enough unallocated or pooled memory to immediately
                 // satisfy the request, but need to allocate the buffer
                 freeUp(size);
+                //池化内存-size
                 this.nonPooledAvailableMemory -= size;
             } else {
                 // we are out of memory and will have to block
@@ -150,6 +159,7 @@ public class BufferPool {
                         long timeNs;
                         boolean waitingTimeElapsed;
                         try {
+                            //
                             waitingTimeElapsed = !moreMemory.await(remainingTimeToBlockNs, TimeUnit.NANOSECONDS);
                         } finally {
                             long endWaitNs = time.nanoseconds();
@@ -160,6 +170,8 @@ public class BufferPool {
                         if (this.closed)
                             throw new KafkaException("Producer closed while allocating memory");
 
+                        // 等待最大阻塞时间之后被唤醒的，那么说明当前bufferPool中没有空闲空间可使用了，
+                        // 抛出异常
                         if (waitingTimeElapsed) {
                             this.metrics.sensor("buffer-exhausted-records").record();
                             throw new BufferExhaustedException("Failed to allocate " + size + " bytes within the configured max blocking time "
@@ -171,11 +183,16 @@ public class BufferPool {
 
                         // check if we can satisfy this request from the free list,
                         // otherwise allocate memory
+                        // 消息需要的缓冲池大小正好等于batch.size并且空闲列表池不为空，
+                        // 那么从空闲列表取出第一个空闲buffer进行返回
                         if (accumulated == 0 && size == this.poolableSize && !this.free.isEmpty()) {
                             // just grab a buffer from the free list
                             buffer = this.free.pollFirst();
                             accumulated = size;
                         } else {
+                            // 1. 消息大小大于batch.size
+                            // 2. 空闲列表为空
+
                             // we'll need to allocate memory, but we may only get
                             // part of what we need on this iteration
                             freeUp(size - accumulated);
@@ -265,13 +282,20 @@ public class BufferPool {
         lock.lock();
         try {
             if (size == this.poolableSize && size == buffer.capacity()) {
+                /**
+                 * 如果是等于可池化的大小，那么会添加到空闲列表中
+                 */
                 buffer.clear();
                 this.free.add(buffer);
             } else {
+                /**
+                 * 否则只是变更非池化可用内存大小
+                 */
                 this.nonPooledAvailableMemory += size;
             }
             Condition moreMem = this.waiters.peekFirst();
             if (moreMem != null)
+                // 通知其他线程有可用的空闲空间使用了
                 moreMem.signal();
         } finally {
             lock.unlock();

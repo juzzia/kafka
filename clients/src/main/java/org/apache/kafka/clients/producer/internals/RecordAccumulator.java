@@ -293,6 +293,7 @@ public class RecordAccumulator {
                                      boolean abortOnNewBatch,
                                      long nowMs,
                                      Cluster cluster) throws InterruptedException {
+        // 先获取主题元数据信息
         TopicInfo topicInfo = topicInfoMap.computeIfAbsent(topic, k -> new TopicInfo(logContext, k, batchSize));
 
         // We keep track of the number of appending thread to make sure we do not miss batches in
@@ -310,6 +311,7 @@ public class RecordAccumulator {
                 final BuiltInPartitioner.StickyPartitionInfo partitionInfo;
                 final int effectivePartition;
                 if (partition == RecordMetadata.UNKNOWN_PARTITION) {
+                    // 计算partition，随机或者根据分组负载选择某个负载最小的partition
                     partitionInfo = topicInfo.builtInPartitioner.peekCurrentPartitionInfo(cluster);
                     effectivePartition = partitionInfo.partition();
                 } else {
@@ -324,29 +326,36 @@ public class RecordAccumulator {
                 Deque<ProducerBatch> dq = topicInfo.batches.computeIfAbsent(effectivePartition, k -> new ArrayDeque<>());
                 synchronized (dq) {
                     // After taking the lock, validate that the partition hasn't changed and retry.
+                    // 消息的分区是否改变了，则交给下一轮处理
                     if (partitionChanged(topic, topicInfo, partitionInfo, dq, nowMs, cluster))
                         continue;
 
                     RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callbacks, dq, nowMs);
+                    // 如果 partition 的对应的ProducerBatch有空间容纳这次消息，那么就不会返回null
                     if (appendResult != null) {
                         // If queue has incomplete batches we disable switch (see comments in updatePartitionInfo).
                         boolean enableSwitch = allBatchesFull(dq);
                         topicInfo.builtInPartitioner.updatePartitionInfo(partitionInfo, appendResult.appendedBytes, cluster, enableSwitch);
                         return appendResult;
                     }
+                    //没有空间，向下执行
                 }
 
                 // we don't have an in-progress record batch try to allocate a new batch
+                // 大部分情况下应该都是false
                 if (abortOnNewBatch) {
                     // Return a result that will cause another call to append.
                     return new RecordAppendResult(null, false, false, true, 0);
                 }
 
+                //没有空间，向下执行
                 if (buffer == null) {
                     byte maxUsableMagic = apiVersions.maxUsableProduceMagic();
+                    // 新建的ProducerBatch的大小由消息大小与batch.size取最大值
                     int size = Math.max(this.batchSize, AbstractRecords.estimateSizeInBytesUpperBound(maxUsableMagic, compression, key, value, headers));
                     log.trace("Allocating a new {} byte message buffer for topic {} partition {} with remaining timeout {}ms", size, topic, partition, maxTimeToBlock);
                     // This call may block if we exhausted buffer space.
+                    // 开始给这次消息分配一定大小的buffer
                     buffer = free.allocate(size, maxTimeToBlock);
                     // Update the current time in case the buffer allocation blocked above.
                     // NOTE: getting time may be expensive, so calling it under a lock
@@ -370,6 +379,10 @@ public class RecordAccumulator {
                 }
             }
         } finally {
+            /**
+             * 如果是非池化buffer(buffer大小不等于batch.size)那么就会被释放，不会添加到空闲池队列上，
+             * 否则就将其添加到空闲池队列的队尾
+             */
             free.deallocate(buffer);
             appendsInProgress.decrementAndGet();
         }
@@ -447,8 +460,10 @@ public class RecordAccumulator {
                                          Callback callback, Deque<ProducerBatch> deque, long nowMs) {
         if (closed)
             throw new KafkaException("Producer closed while send in progress");
+        // 从队列尾部取出ProducerBatch
         ProducerBatch last = deque.peekLast();
         if (last != null) {
+
             int initialBytes = last.estimatedSizeInBytes();
             FutureRecordMetadata future = last.tryAppend(timestamp, key, value, headers, callback, nowMs);
             if (future == null) {
@@ -684,7 +699,7 @@ public class RecordAccumulator {
             TopicPartition part = new TopicPartition(topic, entry.getKey());
             // Advance queueSizesIndex so that we properly index available
             // partitions.  Do it here so that it's done for all code paths.
-
+            // 获取topic下指定partition的leader副本所在的broker节点信息
             Node leader = metadataSnapshot.cluster().leaderFor(part);
             if (leader != null && queueSizes != null) {
                 ++queueSizesIndex;
@@ -789,7 +804,9 @@ public class RecordAccumulator {
         // cumulative frequency table (used in partitioner).
         for (Map.Entry<String, TopicInfo> topicInfoEntry : this.topicInfoMap.entrySet()) {
             final String topic = topicInfoEntry.getKey();
-            nextReadyCheckDelayMs = partitionReady(metadataSnapshot, nowMs, topic, topicInfoEntry.getValue(), nextReadyCheckDelayMs, readyNodes, unknownLeaderTopics);
+            nextReadyCheckDelayMs
+                    = partitionReady(metadataSnapshot, nowMs, topic,
+                    topicInfoEntry.getValue(), nextReadyCheckDelayMs, readyNodes, unknownLeaderTopics);
         }
         return new ReadyCheckResult(readyNodes, nextReadyCheckDelayMs, unknownLeaderTopics);
     }

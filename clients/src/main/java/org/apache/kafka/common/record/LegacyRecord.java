@@ -54,6 +54,9 @@ public final class LegacyRecord {
     public static final int KEY_SIZE_LENGTH = 4;
     public static final int KEY_OFFSET_V0 = KEY_SIZE_OFFSET_V0 + KEY_SIZE_LENGTH;
     public static final int KEY_OFFSET_V1 = KEY_SIZE_OFFSET_V1 + KEY_SIZE_LENGTH;
+    /**
+     *
+     */
     public static final int VALUE_SIZE_LENGTH = 4;
 
     /**

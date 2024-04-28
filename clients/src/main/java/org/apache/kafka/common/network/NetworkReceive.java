@@ -80,7 +80,9 @@ public class NetworkReceive implements Receive {
 
     public long readFrom(ScatteringByteChannel channel) throws IOException {
         int read = 0;
+        // 有剩余空间
         if (size.hasRemaining()) {
+            // 读取
             int bytesRead = channel.read(size);
             if (bytesRead < 0)
                 throw new EOFException();

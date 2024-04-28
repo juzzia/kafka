@@ -343,7 +343,9 @@ public class Sender implements Runnable {
         }
 
         long currentTimeMs = time.milliseconds();
+        // 发送生产者产生的消息/ 批次发送，将ProducerBatch封装为Request，提交给broker处理
         long pollTimeout = sendProducerData(currentTimeMs);
+        // 轮询得到broker的响应
         client.poll(pollTimeout, currentTimeMs);
     }
 

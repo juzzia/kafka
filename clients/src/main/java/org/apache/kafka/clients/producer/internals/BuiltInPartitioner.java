@@ -73,6 +73,10 @@ public class BuiltInPartitioner {
         int partition;
 
         if (partitionLoadStats == null) {
+            /**
+             * 分区统计状态对象为空，则判断topic的可用partition数量是否大于0，如果大于则随机指定一个可用的partition
+             * ，否则就随机指定topic下的某个partition
+             */
             // We don't have stats to do adaptive partitioning (or it's disabled), just switch to the next
             // partition based on uniform distribution.
             List<PartitionInfo> availablePartitions = cluster.availablePartitionsForTopic(topic);
@@ -93,6 +97,10 @@ public class BuiltInPartitioner {
 
             // By construction, the cumulative frequency table is sorted, so we can use binary
             // search to find the desired index.
+            /**
+             * 累计频率表用于统计partition的消息负载情况，将消息频率负载从小到达排序，然后使用随机生成的数值在该表中进行
+             * 二分查找获取partitionId
+             */
             int searchResult = Arrays.binarySearch(cumulativeFrequencyTable, 0, partitionLoadStats.length, weightedRandom);
 
             // binarySearch results the index of the found element, or -(insertion_point) - 1
@@ -213,6 +221,11 @@ public class BuiltInPartitioner {
         // unready batch after the batch that disabled partition switch becomes ready).
         // As a result, with high latency.ms setting we end up switching partitions after producing
         // between stickyBatchSize and stickyBatchSize * 2 bytes, to better align with batch boundary.
+
+        /**
+         * 这里主要的作用就是优化批处理发送消息，防止因为切换分区导致未满足batch.size大小的消息被发送，
+         * 所以这里做了限制，只有当 ProducerBatch内的消息大小超过了batch.size时才会触发分区切换
+         */
         if (producedBytes >= stickyBatchSize * 2) {
             log.trace("Produced {} bytes, exceeding twice the batch size of {} bytes, with switching set to {}",
                 producedBytes, stickyBatchSize, enableSwitch);

@@ -63,6 +63,9 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     private final long logAppendTime;
     private final boolean isControlBatch;
     private final int partitionLeaderEpoch;
+    /**
+     * max.message.size
+     */
     private final int writeLimit;
     private final int batchHeaderSizeInBytes;
     private final long deleteHorizonMs;
@@ -434,6 +437,10 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     private void appendWithOffset(long offset, boolean isControlRecord, long timestamp, ByteBuffer key,
                                   ByteBuffer value, Header[] headers) {
         try {
+            /**
+             * 控制请求批次
+             *  如控制事务的开始或结束请求
+             */
             if (isControlRecord != isControlBatch)
                 throw new IllegalArgumentException("Control records can only be appended to control batches");
 
@@ -720,6 +727,7 @@ public class MemoryRecordsBuilder implements AutoCloseable {
     private void appendDefaultRecord(long offset, long timestamp, ByteBuffer key, ByteBuffer value,
                                      Header[] headers) throws IOException {
         ensureOpenForRecordAppend();
+        // 相对偏移量，节省4个字节的空间
         int offsetDelta = (int) (offset - baseOffset);
         long timestampDelta = timestamp - baseTimestamp;
         int sizeInBytes = DefaultRecord.writeTo(appendStream, offsetDelta, timestampDelta, key, value, headers);
