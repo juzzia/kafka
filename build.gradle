@@ -20,7 +20,18 @@ import java.nio.charset.StandardCharsets
 
 buildscript {
   repositories {
+
+
+    maven {
+      url 'https://maven.aliyun.com/nexus/content/groups/public/'
+    }
+    maven {
+      url 'https://maven.aliyun.com/nexus/content/repositories/jcenter'
+    }
+
+
     mavenCentral()
+
   }
   apply from: "$rootDir/gradle/dependencies.gradle"
 
@@ -119,6 +130,13 @@ ext {
 allprojects {
 
   repositories {
+    maven {
+      url 'https://maven.aliyun.com/nexus/content/groups/public/'
+    }
+    maven {
+      url 'https://maven.aliyun.com/nexus/content/repositories/jcenter'
+    }
+
     mavenCentral()
   }
 
