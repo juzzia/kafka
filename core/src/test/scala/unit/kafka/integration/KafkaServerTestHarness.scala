@@ -32,8 +32,9 @@ import org.apache.kafka.controller.ControllerRequestContextUtil.ANONYMOUS_CONTEX
 import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 
 import java.io.File
+import java.time.Duration
 import java.util
-import java.util.{Arrays, Collections, Properties}
+import java.util.{Collections, Properties}
 import scala.collection.{Seq, mutable}
 import scala.jdk.CollectionConverters._
 
@@ -140,7 +141,7 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
 
     TestUtils.shutdownServers(_brokers, deleteLogDirs = false)
     _brokers.clear()
-    Arrays.fill(alive, false)
+    util.Arrays.fill(alive, false)
 
     createBrokers(startup)
   }
@@ -259,9 +260,21 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
     index
   }
 
+  /**
+   * Kill the broker at the specified index.
+   * A controlled shutdown is attempted, with a timeout of 5 minutes.
+   */
   def killBroker(index: Int): Unit = {
-    if (alive(index)) {
-      _brokers(index).shutdown()
+    killBroker(index, Duration.ofMinutes(5))
+  }
+
+  /**
+   * Kill the broker at the specified index.
+   * A controlled shutdown is attempted, with the specified timeout.
+   */
+  def killBroker(index: Int, timeout: Duration): Unit = {
+    if(alive(index)) {
+      _brokers(index).shutdown(timeout)
       _brokers(index).awaitShutdown()
       alive(index) = false
     }
@@ -316,7 +329,7 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
     } else {
       val topicIdsMap = getController().kafkaController.controllerContext.topicIds.toMap
       names.foreach { name =>
-        if (topicIdsMap.contains(name)) result.put(name, topicIdsMap.get(name).get)
+        if (topicIdsMap.contains(name)) result.put(name, topicIdsMap(name))
       }
     }
     result.asScala.toMap
@@ -333,8 +346,8 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
   def getTopicNames(): Map[Uuid, String] = {
     if (isKRaftTest()) {
       val result = new util.HashMap[Uuid, String]()
-      controllerServer.controller.findAllTopicIds(ANONYMOUS_CONTEXT).get().entrySet().forEach {
-        e => result.put(e.getValue(), e.getKey())
+      controllerServer.controller.findAllTopicIds(ANONYMOUS_CONTEXT).get().forEach {
+        (key, value) => result.put(value, key)
       }
       result.asScala.toMap
     } else {
@@ -347,7 +360,7 @@ abstract class KafkaServerTestHarness extends QuorumTestHarness {
     // are shutdown cleanly in tearDown even if a subsequent broker fails to start
     val potentiallyRegeneratedConfigs = configs
     alive = new Array[Boolean](potentiallyRegeneratedConfigs.length)
-    Arrays.fill(alive, false)
+    util.Arrays.fill(alive, false)
     for (config <- potentiallyRegeneratedConfigs) {
       val broker = createBrokerFromConfig(config)
       _brokers += broker

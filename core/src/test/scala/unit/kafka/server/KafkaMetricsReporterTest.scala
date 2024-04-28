@@ -18,7 +18,7 @@ package kafka.server
 
 import java.util
 import java.util.concurrent.atomic.AtomicReference
-import kafka.utils.{CoreUtils, TestInfoUtils, TestUtils}
+import kafka.utils.{CoreUtils, TestUtils}
 import org.apache.kafka.common.metrics.{KafkaMetric, MetricsContext, MetricsReporter}
 import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 import org.junit.jupiter.api.Assertions._
@@ -48,7 +48,7 @@ object KafkaMetricsReporterTest {
     }
 
     private def contextLabelOrNull(name: String, metricsContext: MetricsContext): String = {
-      Option(metricsContext.contextLabels().get(name)).flatMap(v => Option(v.toString())).orNull
+      Option(metricsContext.contextLabels().get(name)).flatMap(v => Option(v)).orNull
     }
 
     override def configure(configs: util.Map[String, _]): Unit = {}
@@ -78,7 +78,7 @@ class KafkaMetricsReporterTest extends QuorumTestHarness {
     broker.startup()
   }
 
-  @ParameterizedTest(name = TestInfoUtils.TestWithParameterizedQuorumName)
+  @ParameterizedTest
   @ValueSource(strings = Array("zk", "kraft"))
   def testMetricsContextNamespacePresent(quorum: String): Unit = {
     assertNotNull(KafkaMetricsReporterTest.MockMetricsReporter.CLUSTERID.get())

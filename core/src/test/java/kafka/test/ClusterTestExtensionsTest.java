@@ -31,8 +31,13 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import java.util.HashMap;
+import java.util.Map;
 
-@ClusterTestDefaults(clusterType = Type.ZK)   // Set defaults for a few params in @ClusterTest(s)
+
+@ClusterTestDefaults(clusterType = Type.ZK, serverProperties = {
+    @ClusterConfigProperty(key = "default.key", value = "default.value"),
+})   // Set defaults for a few params in @ClusterTest(s)
 @ExtendWith(ClusterTestExtensions.class)
 public class ClusterTestExtensionsTest {
 
@@ -46,14 +51,18 @@ public class ClusterTestExtensionsTest {
 
     // Static methods can generate cluster configurations
     static void generate1(ClusterGenerator clusterGenerator) {
-        clusterGenerator.accept(ClusterConfig.defaultClusterBuilder().name("Generated Test").build());
+        Map<String, String> serverProperties = new HashMap<>();
+        serverProperties.put("foo", "bar");
+        clusterGenerator.accept(ClusterConfig.defaultBuilder()
+                .setName("Generated Test")
+                .setServerProperties(serverProperties)
+                .build());
     }
 
     // BeforeEach run after class construction, but before cluster initialization and test invocation
     @BeforeEach
     public void beforeEach(ClusterConfig config) {
         Assertions.assertSame(this.config, config, "Injected objects should be the same");
-        config.serverProperties().put("before", "each");
     }
 
     // AfterEach runs after test invocation and cluster teardown
@@ -67,18 +76,18 @@ public class ClusterTestExtensionsTest {
     public void testClusterTest(ClusterConfig config, ClusterInstance clusterInstance) {
         Assertions.assertSame(this.config, config, "Injected objects should be the same");
         Assertions.assertSame(this.clusterInstance, clusterInstance, "Injected objects should be the same");
-        Assertions.assertEquals(clusterInstance.clusterType(), ClusterInstance.ClusterType.ZK); // From the class level default
-        Assertions.assertEquals(clusterInstance.config().serverProperties().getProperty("before"), "each");
+        Assertions.assertEquals(ClusterInstance.ClusterType.ZK, clusterInstance.clusterType()); // From the class level default
+        Assertions.assertEquals("default.value", clusterInstance.config().serverProperties().get("default.key"));
     }
 
     // generate1 is a template method which generates any number of cluster configs
     @ClusterTemplate("generate1")
     public void testClusterTemplate() {
-        Assertions.assertEquals(clusterInstance.clusterType(), ClusterInstance.ClusterType.ZK,
+        Assertions.assertEquals(ClusterInstance.ClusterType.ZK, clusterInstance.clusterType(),
             "generate1 provided a Zk cluster, so we should see that here");
-        Assertions.assertEquals(clusterInstance.config().name().orElse(""), "Generated Test",
+        Assertions.assertEquals("Generated Test", clusterInstance.config().name().orElse(""),
             "generate1 named this cluster config, so we should see that here");
-        Assertions.assertEquals(clusterInstance.config().serverProperties().getProperty("before"), "each");
+        Assertions.assertEquals("bar", clusterInstance.config().serverProperties().get("foo"));
     }
 
     // Multiple @ClusterTest can be used with @ClusterTests
@@ -89,20 +98,24 @@ public class ClusterTestExtensionsTest {
         }),
         @ClusterTest(name = "cluster-tests-2", clusterType = Type.KRAFT, serverProperties = {
             @ClusterConfigProperty(key = "foo", value = "baz"),
-            @ClusterConfigProperty(key = "spam", value = "eggz")
+            @ClusterConfigProperty(key = "spam", value = "eggz"),
+            @ClusterConfigProperty(key = "default.key", value = "overwrite.value")
         }),
         @ClusterTest(name = "cluster-tests-3", clusterType = Type.CO_KRAFT, serverProperties = {
             @ClusterConfigProperty(key = "foo", value = "baz"),
-            @ClusterConfigProperty(key = "spam", value = "eggz")
+            @ClusterConfigProperty(key = "spam", value = "eggz"),
+            @ClusterConfigProperty(key = "default.key", value = "overwrite.value")
         })
     })
     public void testClusterTests() {
         if (clusterInstance.clusterType().equals(ClusterInstance.ClusterType.ZK)) {
-            Assertions.assertEquals(clusterInstance.config().serverProperties().getProperty("foo"), "bar");
-            Assertions.assertEquals(clusterInstance.config().serverProperties().getProperty("spam"), "eggs");
+            Assertions.assertEquals("bar", clusterInstance.config().serverProperties().get("foo"));
+            Assertions.assertEquals("eggs", clusterInstance.config().serverProperties().get("spam"));
+            Assertions.assertEquals("default.value", clusterInstance.config().serverProperties().get("default.key"));
         } else if (clusterInstance.clusterType().equals(ClusterInstance.ClusterType.RAFT)) {
-            Assertions.assertEquals(clusterInstance.config().serverProperties().getProperty("foo"), "baz");
-            Assertions.assertEquals(clusterInstance.config().serverProperties().getProperty("spam"), "eggz");
+            Assertions.assertEquals("baz", clusterInstance.config().serverProperties().get("foo"));
+            Assertions.assertEquals("eggz", clusterInstance.config().serverProperties().get("spam"));
+            Assertions.assertEquals("overwrite.value", clusterInstance.config().serverProperties().get("default.key"));
         } else {
             Assertions.fail("Unknown cluster type " + clusterInstance.clusterType());
         }

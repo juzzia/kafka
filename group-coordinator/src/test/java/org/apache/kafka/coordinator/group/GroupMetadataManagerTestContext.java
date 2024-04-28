@@ -47,7 +47,7 @@ import org.apache.kafka.coordinator.group.assignor.PartitionAssignor;
 import org.apache.kafka.coordinator.group.classic.ClassicGroup;
 import org.apache.kafka.coordinator.group.consumer.ConsumerGroup;
 import org.apache.kafka.coordinator.group.consumer.ConsumerGroupBuilder;
-import org.apache.kafka.coordinator.group.consumer.ConsumerGroupMember;
+import org.apache.kafka.coordinator.group.consumer.MemberState;
 import org.apache.kafka.coordinator.group.generated.ConsumerGroupCurrentMemberAssignmentKey;
 import org.apache.kafka.coordinator.group.generated.ConsumerGroupCurrentMemberAssignmentValue;
 import org.apache.kafka.coordinator.group.generated.ConsumerGroupMemberMetadataKey;
@@ -85,7 +85,7 @@ import java.util.stream.IntStream;
 import static org.apache.kafka.common.requests.JoinGroupRequest.UNKNOWN_MEMBER_ID;
 import static org.apache.kafka.coordinator.group.GroupMetadataManager.EMPTY_RESULT;
 import static org.apache.kafka.coordinator.group.GroupMetadataManager.classicGroupHeartbeatKey;
-import static org.apache.kafka.coordinator.group.GroupMetadataManager.consumerGroupRevocationTimeoutKey;
+import static org.apache.kafka.coordinator.group.GroupMetadataManager.consumerGroupRebalanceTimeoutKey;
 import static org.apache.kafka.coordinator.group.GroupMetadataManager.consumerGroupSessionTimeoutKey;
 import static org.apache.kafka.coordinator.group.classic.ClassicGroupState.COMPLETING_REBALANCE;
 import static org.apache.kafka.coordinator.group.classic.ClassicGroupState.DEAD;
@@ -353,6 +353,7 @@ public class GroupMetadataManagerTestContext {
         private int classicGroupMinSessionTimeoutMs = 10;
         private int classicGroupMaxSessionTimeoutMs = 10 * 60 * 1000;
         final private GroupCoordinatorMetricsShard metrics = mock(GroupCoordinatorMetricsShard.class);
+        private ConsumerGroupMigrationPolicy consumerGroupMigrationPolicy = ConsumerGroupMigrationPolicy.DISABLED;
 
         public Builder withMetadataImage(MetadataImage metadataImage) {
             this.metadataImage = metadataImage;
@@ -399,6 +400,11 @@ public class GroupMetadataManagerTestContext {
             return this;
         }
 
+        public Builder withConsumerGroupMigrationPolicy(ConsumerGroupMigrationPolicy consumerGroupMigrationPolicy) {
+            this.consumerGroupMigrationPolicy = consumerGroupMigrationPolicy;
+            return this;
+        }
+
         public GroupMetadataManagerTestContext build() {
             if (metadataImage == null) metadataImage = MetadataImage.EMPTY;
             if (consumerGroupAssignors == null) consumerGroupAssignors = Collections.emptyList();
@@ -425,6 +431,7 @@ public class GroupMetadataManagerTestContext {
                     .withClassicGroupInitialRebalanceDelayMs(classicGroupInitialRebalanceDelayMs)
                     .withClassicGroupNewMemberJoinTimeoutMs(classicGroupNewMemberJoinTimeoutMs)
                     .withGroupCoordinatorMetricsShard(metrics)
+                    .withConsumerGroupMigrationPolicy(consumerGroupMigrationPolicy)
                     .build(),
                 classicGroupInitialRebalanceDelayMs,
                 classicGroupNewMemberJoinTimeoutMs
@@ -483,16 +490,16 @@ public class GroupMetadataManagerTestContext {
         String groupId
     ) {
         return groupMetadataManager
-            .getOrMaybeCreateConsumerGroup(groupId, false)
+            .consumerGroup(groupId)
             .state();
     }
 
-    public ConsumerGroupMember.MemberState consumerGroupMemberState(
+    public MemberState consumerGroupMemberState(
         String groupId,
         String memberId
     ) {
         return groupMetadataManager
-            .getOrMaybeCreateConsumerGroup(groupId, false)
+            .consumerGroup(groupId)
             .getOrMaybeCreateMember(memberId, false)
             .state();
     }
@@ -521,7 +528,9 @@ public class GroupMetadataManagerTestContext {
             request
         );
 
-        result.records().forEach(this::replay);
+        if (result.appendFuture() == null) {
+            result.records().forEach(this::replay);
+        }
         return result;
     }
 
@@ -556,24 +565,24 @@ public class GroupMetadataManagerTestContext {
         assertNull(timeout);
     }
 
-    public MockCoordinatorTimer.ScheduledTimeout<Void, Record> assertRevocationTimeout(
+    public MockCoordinatorTimer.ScheduledTimeout<Void, Record> assertRebalanceTimeout(
         String groupId,
         String memberId,
         long delayMs
     ) {
         MockCoordinatorTimer.ScheduledTimeout<Void, Record> timeout =
-            timer.timeout(consumerGroupRevocationTimeoutKey(groupId, memberId));
+            timer.timeout(consumerGroupRebalanceTimeoutKey(groupId, memberId));
         assertNotNull(timeout);
         assertEquals(time.milliseconds() + delayMs, timeout.deadlineMs);
         return timeout;
     }
 
-    public void assertNoRevocationTimeout(
+    public void assertNoRebalanceTimeout(
         String groupId,
         String memberId
     ) {
         MockCoordinatorTimer.ScheduledTimeout<Void, Record> timeout =
-            timer.timeout(consumerGroupRevocationTimeoutKey(groupId, memberId));
+            timer.timeout(consumerGroupRebalanceTimeoutKey(groupId, memberId));
         assertNull(timeout);
     }
 
@@ -1273,5 +1282,9 @@ public class GroupMetadataManagerTestContext {
 
         lastWrittenOffset++;
         snapshotRegistry.getOrCreateSnapshot(lastWrittenOffset);
+    }
+
+    void onUnloaded() {
+        groupMetadataManager.onUnloaded();
     }
 }

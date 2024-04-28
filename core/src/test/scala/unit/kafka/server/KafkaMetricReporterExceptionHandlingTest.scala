@@ -14,14 +14,14 @@
 
 package kafka.server
 
-import kafka.utils.{TestInfoUtils, TestUtils}
-import org.apache.kafka.common.config.internals.QuotaConfigs
+import kafka.utils.TestUtils
 import org.apache.kafka.common.message.ListGroupsRequestData
 import org.apache.kafka.common.metrics.{KafkaMetric, MetricsReporter}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{ListGroupsRequest, ListGroupsResponse}
 import org.apache.kafka.common.security.auth.SecurityProtocol
+import org.apache.kafka.server.config.QuotaConfigs
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.{AfterEach, BeforeEach, TestInfo}
 import org.junit.jupiter.params.ParameterizedTest
@@ -62,7 +62,7 @@ class KafkaMetricReporterExceptionHandlingTest extends BaseRequestTest {
     super.tearDown()
   }
 
-  @ParameterizedTest(name = TestInfoUtils.TestWithParameterizedQuorumName)
+  @ParameterizedTest
   @ValueSource(strings = Array("zk", "kraft"))
   def testBothReportersAreInvoked(quorum: String): Unit = {
     val port = anySocketServer.boundPort(ListenerName.forSecurityProtocol(SecurityProtocol.PLAINTEXT))
